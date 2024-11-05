@@ -1,58 +1,43 @@
 <script>
-    import { createProduct } from '../api.js';
-    let newProduct = {
-      name: '',
-      sku: '',
-      description: '',
-      unit: 'pcs',
-      minimum_stock: 0,
-      current_stock: 0
-    };
-  
-    async function handleCreateProduct() {
-      await createProduct(newProduct);
-      // Add your loadProducts function here if needed
-      newProduct = {
-        name: '',
-        sku: '',
-        description: '',
-        unit: 'pcs',
-        minimum_stock: 0,
-        current_stock: 0
-      };
-    }
-  </script>
-  
-  <div class="container mx-auto p-4">
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div class="bg-white p-4 rounded shadow">
-        <h2 class="text-xl font-bold mb-4">Add New Product</h2>
-        <form on:submit|preventDefault={handleCreateProduct} class="space-y-4">
-          <div>
-            <label for="product-name" class="block">Name:</label>
-            <input id="product-name" type="text" bind:value={newProduct.name} class="w-full border p-2 rounded" />
-          </div>
-          <div>
-            <label for="product-sku" class="block">SKU:</label>
-            <input id="product-sku" type="text" bind:value={newProduct.sku} class="w-full border p-2 rounded" />
-          </div>
-          <div>
-            <label for="product-description" class="block">Description:</label>
-            <textarea id="product-description" bind:value={newProduct.description} class="w-full border p-2 rounded"></textarea>
-          </div>
-          <div>
-            <label for="product-unit" class="block">Unit:</label>
-            <input id="product-unit" type="text" bind:value={newProduct.unit} class="w-full border p-2 rounded" />
-          </div>
-          <div>
-            <label for="product-min-stock" class="block">Minimum Stock:</label>
-            <input id="product-min-stock" type="number" bind:value={newProduct.minimum_stock} class="w-full border p-2 rounded" />
-          </div>
-          <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">
-            Create Product
-          </button>
-        </form>
-      </div>
-    </div>
+  import { page } from '$app/stores';
+</script>
+
+<!-- Hero Section -->
+<div class="card p-4 bg-gradient-to-br variant-gradient-secondary-tertiary">
+  <div class="container mx-auto text-center">
+    <h1 class="text-5xl font-bold mb-4">Welcome to the Warehouse Management System Demo</h1>
+    <p class="text-lg mb-8">Manage your products, containers, and orders seamlessly with our intuitive interface.</p>
+    <a href="/products" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition inline-block">Get Started</a>
   </div>
-  
+</div>
+
+<!-- Features Section -->
+<div class="container mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 py-16">
+  <div class="card p-4">
+    <h2 class="text-2xl font-semibold mb-4">Products</h2>
+    <p class="mb-4">Add, manage, and track your products with ease. Keep inventory up to date.</p>
+    <a href="/products" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition inline-block">Manage Products</a>
+  </div>
+
+  <div class="card p-4">
+    <h2 class="text-2xl font-semibold mb-4">Containers</h2>
+    <p class="mb-4">Organize your products into containers for efficient storage and tracking.</p>
+    <a href="/containers" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition inline-block">View Containers</a>
+  </div>
+
+  <div class="card p-4">
+    <h2 class="text-2xl font-semibold mb-4">Orders</h2>
+    <p class="mb-4">Create, manage, and track customer orders with real-time inventory insights.</p>
+    <a href="/orders" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition inline-block">Manage Orders</a>
+  </div>
+</div>
+
+<!-- CTA Section -->
+<div class="card p-4">
+  <div class="container mx-auto text-center">
+    <h2 class="text-3xl font-bold mb-6">Ready to streamline your warehouse management?</h2>
+    <p class="mb-8">Our system helps you stay organized and efficient. Click below to learn more and get started.</p>
+    <a href="/products" class="bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700 transition inline-block">Start Managing Now</a>
+  </div>
+</div>
+

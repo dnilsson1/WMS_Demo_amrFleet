@@ -1,7 +1,8 @@
 # backend/main.py
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, APIRouter
 from typing import List, Optional
 import json
+import httpx
 import uuid
 from datetime import datetime
 from models import *
@@ -14,7 +15,7 @@ JSON_FILE_PATH = "./data.json"
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:4173"],  # Frontend URL
+    allow_origins=["http://localhost:4173", "http://localhost:5173"],  # Frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -25,6 +26,7 @@ products = {}
 containers = {}
 orders = {}
 inventory_movements = []
+ip_config = {}
 
 def load_data(file_path):
     try:
@@ -47,12 +49,42 @@ save_data(products, 'products.json')
 save_data(containers, 'containers.json')
 save_data(orders, 'orders.json')
 save_data(inventory_movements, 'inventory_movements.json')
+save_data(ip_config, 'ip_config.json')
+
+# Load the IP and Port configuration from file
+CONFIG_FILE = "ip_config.json"
+
+router = APIRouter()
+
+def load_config():
+    try:
+        with open(CONFIG_FILE, "r") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        return {"ip": "127.0.0.1", "port": "8000"}  # Default values
+
+def save_config(config):
+    with open(CONFIG_FILE, "w") as file:
+        json.dump(config, file)
+
+
+# Endpoint to update the IP and Port configuration
+@router.post("/set-ip")
+async def set_ip(ip_request: IPConfig):
+    ip_config["ip"] = ip_request.ip
+    ip_config["port"] = ip_request.port
+    save_config(ip_config)
+    return {"success": True, "message": "IP and Port updated successfully."}
+
+# Include the router in the application
+app.include_router(router)
 
 # Product management endpoints
 @app.post("/products/", response_model=Product)
 async def create_product(product: Product):
     if not product.id:
-        product.id = str()
+       product.id = str(uuid.uuid4())
+
     products[product.id] = product
     return product
 
@@ -120,17 +152,50 @@ async def list_inventory_movements(
 async def list_containers():
     return list(containers.values())
 
-# Enhanced container endpoints
 @app.post("/containers/entry")
 async def container_entry(container: Container):
     request_id = str(uuid.uuid4())
     containers[container.containerCode] = container
-    
+
     # Record initial inventory if container has contents
     for product_id, quantity in container.contents.items():
         await adjust_stock(product_id, quantity, container.containerCode)
+
+    # Prepare payload for the external containerIn API
+    payload = {
+        "requestId": request_id,
+        "containerType": "",  # Assuming container type is not needed or empty
+        "containerCode": container.containerCode,
+        "position": "M001-A001-31",  # Replace with actual position if applicable
+        "containerModelCode": "",  # Assuming container model code is not needed
+        "enterOrientation": "",  # Assuming no special orientation is needed
+        "isNew": False  # Assuming the container is not new
+    }
+
+    headers = {
+        "ContentType": "application/json"
+    }
+
+    # Define the external API URL
+    api_url = "http://[IP:Port]/interfaces/api/amr/containerIn"
+
+    try:
+        # Send the request to the external containerIn API
+        async with httpx.AsyncClient() as client:
+            response = await client.post(api_url, json=payload, headers=headers)
+
+        # Handle response
+        if response.status_code == 200:
+            response_data = response.json()
+            if response_data.get("success"):
+                return {"requestId": request_id, "success": True}
+            else:
+                raise HTTPException(status_code=500, detail=f"Failed to register container: {response_data.get('message')}")
+        else:
+            raise HTTPException(status_code=response.status_code, detail=f"Error from external API: {response.text}")
     
-    return {"requestId": request_id, "success": True}
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to connect to external API: {str(e)}")
 
 @app.post("/containers/{container_code}/add-product")
 async def add_product_to_container(

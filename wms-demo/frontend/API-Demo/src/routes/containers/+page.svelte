@@ -1,5 +1,5 @@
 <script>
-    import { onMount } from "svelte";
+    import { writable } from "svelte/store";
     import { createContainer, addProductToContainer } from "$lib/api";
     import { ContainerType, EmptyStatus } from "$lib/constants";
     
@@ -26,7 +26,7 @@
   </script>
   
   <div class="space-y-8">
-    <div class="bg-white p-4 rounded shadow">
+    <div class="card p-4">
       <h2 class="text-xl font-bold mb-4">Add New Container</h2>
       <form on:submit|preventDefault={handleCreateContainer} class="space-y-4">
         <div>

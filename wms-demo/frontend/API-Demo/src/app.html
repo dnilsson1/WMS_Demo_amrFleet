@@ -3,6 +3,7 @@
   import Products from "./routes/products/+page.svelte";
   import Containers from "./routes/containers/+page.svelte";
   import Orders from "./routes/orders/+page.svelte";
+  import Settings from "./routes/settings/+page.svelte"
   import { setContext } from "svelte";
   
   // Set API URL in context so all components can access it
@@ -17,7 +18,7 @@
   <title>SvelteKit App</title>
   %sveltekit.head%
 </head>
-<body>
+<body  data-theme="skeleton">
   <div id="svelte">
     %sveltekit.body%
   </div>

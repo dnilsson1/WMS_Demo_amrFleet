@@ -3,6 +3,10 @@ from typing import Optional, List, Dict
 from enum import Enum
 from datetime import datetime
 
+class IPConfig(BaseModel):
+    ip: str
+    port: str
+
 class ContainerType(str, Enum):
     RACK = "RACK"
     BIN = "BIN"

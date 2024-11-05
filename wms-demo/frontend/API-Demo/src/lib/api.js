@@ -24,6 +24,7 @@ export async function createProduct(product) {
     return await response.json();
   } catch (error) {
     console.error('Error:', error);
+    console.log('REST Body: ', body)
     throw error;
   }
 }
@@ -80,3 +81,24 @@ export async function pickOrder(orderId, containerCode) {
   });
   return await response.json();
 }
+
+// IP Configuration API
+export async function setIpConfig(ipConfig) {
+  try {
+    const response = await fetch(`${API_BASE}/set-ip`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(ipConfig),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error:', error);
+    throw error;
+  }
+}
+
