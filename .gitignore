@@ -1,0 +1,33 @@
+# Node.js
+node_modules/
+dist/
+build/
+*.log
+
+# Svelte
+public/build/
+__sapper__/
+.svelte-kit/
+.svelte/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.pyo
+*.pyd
+
+# FastAPI
+.env
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.db
+*.sqlite3
