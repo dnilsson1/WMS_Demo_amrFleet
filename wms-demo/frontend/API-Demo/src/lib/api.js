@@ -35,12 +35,20 @@ export async function getProducts() {
   return await response.json();
 }
 
-export async function adjustStock(productId, quantity, containerCode) {
+export async function adjustStock(productId, quantity, containerCode = null) {
+  const payload = { quantity };
+  if (containerCode) {
+    payload.container_code = containerCode;
+  }
   const response = await fetch(`${API_BASE}/products/${productId}/adjust-stock`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ quantity, containerCode }),
+    body: JSON.stringify(payload),
   });
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.detail || 'Failed to adjust stock');
+  }
   return await response.json();
 }
 
@@ -64,23 +72,30 @@ export async function addProductToContainer(containerCode, productId, quantity) 
 }
 
 // Order APIs
-export async function createOrder(items) {
+export async function createOrder(orderData) {
   const response = await fetch(`${API_BASE}/orders/create`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(items),
+    body: JSON.stringify(orderData),
   });
   return await response.json();
 }
 
-export async function pickOrder(orderId, containerCode) {
+
+export async function pickOrder(orderId, destinationName) {
   const response = await fetch(`${API_BASE}/orders/${orderId}/pick`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ container_code: containerCode }),
+    body: JSON.stringify({ destination_name: destinationName }),
   });
   return await response.json();
 }
+
+export async function getOrders() {
+  const response = await fetch(`${API_BASE}/orders/`);
+  return await response.json();
+}
+
 
 // IP Configuration API
 export async function setIpConfig(ipConfig) {
