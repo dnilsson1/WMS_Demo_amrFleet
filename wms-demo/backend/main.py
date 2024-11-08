@@ -13,6 +13,7 @@ from schemas import OrderCreate, OrderItemCreate, StockAdjustment
 DATABASE_URL = "sqlite:///./app.db"
 
 engine = create_engine(DATABASE_URL, echo=True)
+
 app = FastAPI()
 
 # CORS middleware
@@ -20,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:4173", "http://localhost:5173"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,36 +41,136 @@ def on_startup():
     global ip_config
     ip_config = load_config()
 
+# Update the load_config and save_config functions
 def load_config():
     with Session(engine) as session:
-        config_entries = session.exec(select(IPConfig)).all()
-        config = {entry.key: entry.value for entry in config_entries}
-        if not config:
-            # Set default values
-            config = {"ip": "127.0.0.1", "port": "8000"}
-            save_config(config)
-        return config
+        config_entry = session.query(IPConfig).first()
+        if config_entry:
+            return {"ip": config_entry.ip, "port": config_entry.port}
+        else:
+            # If no configuration exists, set default values
+            default_config = {"ip": "127.0.0.1", "port": "8000"}
+            save_config(default_config)
+            return default_config
+
+
 
 def save_config(config):
     with Session(engine) as session:
-        # Delete existing config
-        session.exec(delete(IPConfig))
+        existing_config = session.query(IPConfig).first()
+        if existing_config:
+            # Update the existing configuration
+            existing_config.ip = config["ip"]
+            existing_config.port = config["port"]
+        else:
+            # Create a new configuration entry
+            new_config = IPConfig(ip=config["ip"], port=config["port"])
+            session.add(new_config)
         session.commit()
-        # Insert new config
-        for key, value in config.items():
-            config_entry = IPConfig(key=key, value=value)
-            session.add(config_entry)
+
+
+
+def get_base_url():
+    config = load_config()
+    ip = config.get("ip", "127.0.0.1")  # Default to localhost if not set
+    port = config.get("port", "8000")  # Default to port 8000 if not set
+    return f"http://{ip}:{port}"
+
+
+
+# Fetch area codes from the external API
+def get_area_codes():
+    base_url = get_base_url()
+    api_url = f"{base_url}/interfaces/api/amr/areaQuery"
+    headers = {"Content-Type": "application/json"}
+    try:
+        response = httpx.get(api_url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("success"):
+            areas = data.get("data", [])
+            return [area.get("areaCode") for area in areas]
+        else:
+            raise HTTPException(
+                status_code=500, detail=f"Error fetching areas: {data.get('message')}"
+            )
+    except httpx.HTTPError as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to connect to areaQuery API: {str(e)}"
+        )
+
+# Fetch nodes in specified areas
+def get_nodes_in_areas(area_codes):
+    base_url = get_base_url()
+    api_url = f"{base_url}/interfaces/api/amr/areaNodesQuery"
+    headers = {"Content-Type": "application/json"}
+    payload = {"areaCodes": area_codes}
+    try:
+        response = httpx.post(api_url, json=payload, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("success"):
+            areas_with_nodes = data.get("data", [])
+            nodes = []
+            for area in areas_with_nodes:
+                nodes.extend(area.get("nodeList", []))
+            return nodes
+        else:
+            raise HTTPException(
+                status_code=500, detail=f"Error fetching nodes: {data.get('message')}"
+            )
+    except httpx.HTTPError as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to connect to areaNodesQuery API: {str(e)}"
+        )
+
+# Fetch points from the Fleet Manager
+def get_points():
+    area_codes = get_area_codes()
+    if not area_codes:
+        return []
+    nodes = get_nodes_in_areas(area_codes)
+    if not nodes:
+        return []
+    with Session(engine) as session:
+        points = []
+        for node in nodes:
+            # Check if point exists in the database
+            point = session.get(Point, node)
+            if point:
+                points.append(point)
+            else:
+                # Add a new point if it doesn't exist
+                point = Point(name=node, position=node, wms_name=node)
+                session.add(point)
+                points.append(point)
         session.commit()
+    return points
 
 # Endpoint to update the IP and Port configuration
 @app.post("/set-ip")
 def set_ip(ip_request: IPConfig):
-    global ip_config
-    ip_config = {"ip": ip_request.ip, "port": ip_request.port}
-    save_config(ip_config)
+    # Debugging: Log the received data
+    print(f"Received IP Request: {ip_request}")
+
+    # Validate the input
+    if not ip_request.ip or not ip_request.port:
+        raise HTTPException(status_code=400, detail="IP and Port are required.")
+
+    config = {"ip": ip_request.ip, "port": ip_request.port}
+    save_config(config)
     return {"success": True, "message": "IP and Port updated successfully."}
 
+
+# Endpoint to get the current IP and Port configuration
+@app.get("/get-ip")
+def get_ip():
+    config = load_config()
+    return config
+
+
 # Product endpoints
+
 @app.post("/products/", response_model=Product)
 def create_product(product: Product):
     with Session(engine) as session:
@@ -166,53 +267,47 @@ def list_containers():
 @app.post("/containers/entry")
 def container_entry(container: Container):
     with Session(engine) as session:
-        # Check if container already exists
         existing_container = session.get(Container, container.containerCode)
         if existing_container:
             raise HTTPException(status_code=400, detail="Container already exists")
         session.add(container)
 
-        # Record initial inventory if container has contents
         for product_id, quantity in container.contents.items():
             adjust_stock(product_id, quantity, container.containerCode)
 
         session.commit()
 
-    # Prepare payload for the external containerIn API
-    request_id = str(uuid.uuid4())
-    payload = {
-        "requestId": request_id,
-        "containerType": container.containerType.value if container.containerType else "",
-        "containerCode": container.containerCode,
-        "position": container.position,  # Use container's position
-        "containerModelCode": "",  # Assuming container model code is not needed
-        "enterOrientation": "",  # Assuming no special orientation is needed
-        "isNew": False  # Assuming the container is not new
-    }
+        # Extract container details to avoid DetachedInstanceError
+        container_data = {
+            "requestId": str(uuid.uuid4()),
+            "containerType": container.containerType,
+            "containerCode": container.containerCode,
+            "position": container.position,
+            "containerModelCode": container.containerModelCode,
+            "enterOrientation": container.enterOrientation,
+            "isNew": container.isNew,
+        }
 
-    headers = {
-        "Content-Type": "application/json"
-    }
-
-    # Define the external API URL
-    api_url = f"http://{ip_config['ip']}:{ip_config['port']}/interfaces/api/amr/containerIn"
+    # Prepare payload for the external API
+    base_url = get_base_url()
+    api_url = f"{base_url}/interfaces/api/amr/containerIn"
+    headers = {"Content-Type": "application/json"}
 
     try:
-        # Send the request to the external containerIn API
-        response = httpx.post(api_url, json=payload, headers=headers)
-
-        # Handle response
-        if response.status_code == 200:
-            response_data = response.json()
-            if response_data.get("success"):
-                return {"requestId": request_id, "success": True}
-            else:
-                raise HTTPException(status_code=500, detail=f"Failed to register container: {response_data.get('message')}")
+        response = httpx.post(api_url, json=container_data, headers=headers)
+        response.raise_for_status()
+        response_data = response.json()
+        if response_data.get("success"):
+            return {"requestId": container_data["requestId"], "success": True}
         else:
-            raise HTTPException(status_code=response.status_code, detail=f"Error from external API: {response.text}")
-
+            raise HTTPException(
+                status_code=500, detail=f"Error registering container: {response_data.get('message')}"
+            )
     except httpx.HTTPError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to connect to external API: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to connect to fleet manager API: {str(e)}"
+        )
+
 
 @app.post("/containers/{container_code}/add-product")
 def add_product_to_container(
@@ -241,47 +336,57 @@ def find_containers_with_product(session: Session, product_id: str):
     return containers_with_product
 
 def query_container_info(container_code: str):
-    api_url = f"http://{ip_config.get('ip', '127.0.0.1')}:{ip_config.get('port', '8000')}/interfaces/api/amr/containerQuery"
-    payload = {
-        "containerCode": container_code
-    }
-    headers = {
-        "Content-Type": "application/json"
-    }
+    base_url = get_base_url()
+    api_url = f"{base_url}/interfaces/api/amr/containerQuery"
+    payload = {"containerCode": container_code}
+    headers = {"Content-Type": "application/json"}
+
     try:
         response = httpx.post(api_url, json=payload, headers=headers)
-        if response.status_code == 200:
-            response_data = response.json()
-            if response_data.get("success"):
-                data = response_data.get("data")
-                if data:
-                    return data[0]  # Assuming data is a list
-                else:
-                    raise HTTPException(status_code=404, detail=f"Container {container_code} not found in fleet manager")
+        response.raise_for_status()
+        response_data = response.json()
+        if response_data.get("success"):
+            data = response_data.get("data")
+            if data:
+                return data[0]  # Assuming data is a list
             else:
-                raise HTTPException(status_code=500, detail=f"Error querying container: {response_data.get('message')}")
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Container {container_code} not found in fleet manager",
+                )
         else:
-            raise HTTPException(status_code=response.status_code, detail=f"Error querying container: {response.text}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error querying container: {response_data.get('message')}",
+            )
     except httpx.HTTPError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to connect to fleet manager API: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to connect to fleet manager API: {str(e)}",
+        )
+
 
 def submit_mission(mission_payload):
-    api_url = f"http://{ip_config.get('ip', '127.0.0.1')}:{ip_config.get('port', '8000')}/interfaces/api/amr/submitMission"
-    headers = {
-        "Content-Type": "application/json"
-    }
+    base_url = get_base_url()
+    api_url = f"{base_url}/interfaces/api/amr/submitMission"
+    headers = {"Content-Type": "application/json"}
+
     try:
         response = httpx.post(api_url, json=mission_payload, headers=headers)
-        if response.status_code == 200:
-            response_data = response.json()
-            if response_data.get("success"):
-                return response_data
-            else:
-                raise HTTPException(status_code=500, detail=f"Failed to submit mission: {response_data.get('message')}")
+        response.raise_for_status()
+        response_data = response.json()
+        if response_data.get("success"):
+            return response_data
         else:
-            raise HTTPException(status_code=response.status_code, detail=f"Error submitting mission: {response.text}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to submit mission: {response_data.get('message')}",
+            )
     except httpx.HTTPError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to connect to fleet manager API: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to connect to fleet manager API: {str(e)}",
+        )
 
 # List orders
 @app.get("/orders/", response_model=List[Order])
@@ -453,9 +558,14 @@ def add_point(point: Point):
 
 @app.get("/points/", response_model=List[Point])
 def list_points():
-    with Session(engine) as session:
-        points = session.exec(select(Point)).all()
+    try:
+        points = get_points()
         return points
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.delete("/points/{point_name}")
 def delete_point(point_name: str):

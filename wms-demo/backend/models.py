@@ -12,13 +12,13 @@ if TYPE_CHECKING:
     from typing import TYPE_CHECKING
 
 class IPConfig(SQLModel, table=True):
-    key: str = Field(primary_key=True)
-    value: str
+    ip: str = Field(primary_key=True)
+    port: str
 
 class ContainerType(str, Enum):
-    RACK = "RACK"
-    BIN = "BIN"
-    BUCKET = "BUCKET"
+    RACK = "Rack"
+    BRACKET = "Bracket"
+
 
 class EmptyStatus(str, Enum):
     EMPTY = "EMPTY"
@@ -47,16 +47,16 @@ class InventoryMovement(SQLModel, table=True):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     movement_type: str  # "in" or "out"
     reference: Optional[str] = None
-
+    
 class Container(SQLModel, table=True):
     containerCode: str = Field(primary_key=True)
-    containerType: Optional[ContainerType] = Field(sa_column_kwargs={"nullable": True})
+    containerType: str  # or Enum if you have one
     position: str
-    emptyStatus: EmptyStatus = Field(default=EmptyStatus.EMPTY)
-    contents: Dict[str, int] = Field(
-        default_factory=dict,
-        sa_column=Column(JSON)
-    )
+    emptyStatus: str = "EMPTY"  # Or use Enum if applicable
+    containerModelCode: Optional[str] = None
+    enterOrientation: Optional[str] = None  # Add this field
+    contents: Optional[dict] = None  # Assuming contents is a dictionary
+
 
 class Order(SQLModel, table=True):
     orderId: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
@@ -81,8 +81,10 @@ class OrderItem(SQLModel, table=True):
     product: "Product" = Relationship(back_populates="order_items")
 
 class Point(SQLModel, table=True):
-    name: str = Field(primary_key=True)
-    position: str
+    name: str = Field(primary_key=True)  # Original name from fleet manager
+    position: str  # Same as name
+    wms_name: Optional[str] = None  # Renamed point name in WMS system
+
 
 
 
