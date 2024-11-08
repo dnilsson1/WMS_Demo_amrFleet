@@ -47,7 +47,7 @@ class InventoryMovement(SQLModel, table=True):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     movement_type: str  # "in" or "out"
     reference: Optional[str] = None
-    
+
 class Container(SQLModel, table=True):
     containerCode: str = Field(primary_key=True)
     containerType: str  # or Enum if you have one
@@ -68,6 +68,8 @@ class Order(SQLModel, table=True):
 
     # Relationship to OrderItem
     items: List["OrderItem"] = Relationship(back_populates="order")
+
+
 
 class OrderItem(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
