@@ -18,6 +18,7 @@ services:
       - "4173:4173"
     environment:
       - PUBLIC_API_BASE=/api
+      - INTERNAL_API_BASE=http://backend:8000
     depends_on:
       - backend
     networks:
