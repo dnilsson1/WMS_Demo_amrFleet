@@ -1,6 +1,5 @@
 <script>
   import "../app.css";
-  import { setContext } from "svelte";
   import { AppRail, AppRailAnchor } from '@skeletonlabs/skeleton';
   import { page } from '$app/stores';
 
@@ -10,8 +9,6 @@
   import forkliftIcon from '../assets/forklift.svg';
   import settingsIcon from '../assets/settings.svg';
 
-  // Set API URL in context so all components can access it
-  setContext("apiUrl", "http://localhost:8000");
 </script>
 
   <div class="flex flex-col min-h-screen overflow-hidden">

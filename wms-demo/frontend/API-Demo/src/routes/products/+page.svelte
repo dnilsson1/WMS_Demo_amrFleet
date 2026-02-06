@@ -1,5 +1,5 @@
 <script>
-  import { createProduct, adjustStock } from '$lib/api';
+  import { createProduct, adjustStock, getProducts } from '$lib/api';
   import { onMount } from 'svelte';
 
   let product = {
@@ -52,11 +52,7 @@
 
   async function loadProducts() {
     try {
-      const response = await fetch('http://127.0.0.1:8000/products/');
-      if (!response.ok) {
-        throw new Error(`Failed to load products: ${response.statusText}`);
-      }
-      const data = await response.json();
+      const data = await getProducts();
       products = data.map((p) => ({ ...p, adjustQuantity: 0 }));
     } catch (error) {
       console.error('Error loading products:', error);

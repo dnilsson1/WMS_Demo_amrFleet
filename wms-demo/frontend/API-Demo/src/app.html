@@ -1,15 +1,3 @@
-<script>
-  import { Router, Link, Route } from "svelte-routing";
-  import Products from "./routes/products/+page.svelte";
-  import Containers from "./routes/containers/+page.svelte";
-  import Orders from "./routes/orders/+page.svelte";
-  import Settings from "./routes/settings/+page.svelte"
-  import { setContext } from "svelte";
-  
-  // Set API URL in context so all components can access it
-  setContext("apiUrl", "http://localhost:8000");
-</script>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
