@@ -318,6 +318,41 @@ def list_containers():
         return containers
 
 
+def query_fleet_containers():
+    base_url = get_base_url()
+    api_url = f"{base_url}/interfaces/api/amr/containerQueryAll"
+    headers = get_fleet_headers()
+
+    try:
+        response = httpx.post(api_url, json={}, headers=headers)
+        response.raise_for_status()
+        try:
+            response_data = response.json()
+        except ValueError:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Fleet manager returned non-JSON response: {response.text}",
+            )
+        if not response_data.get("success"):
+            raise HTTPException(
+                status_code=502,
+                detail=f"Fleet manager error: {response_data.get('message')}",
+            )
+        return response_data.get("data") or []
+    except httpx.HTTPError as e:
+        raise HTTPException(
+            status_code=502, detail=f"Failed to connect to fleet manager API: {str(e)}"
+        )
+
+
+@app.get("/containers/fleet")
+def list_fleet_containers():
+    data = query_fleet_containers()
+    return {
+        "containers": [item.get("containerCode") for item in data if item.get("containerCode")]
+    }
+
+
 @app.post("/containers/", response_model=Container)
 def create_container(container: Container):
     with Session(engine) as session:
@@ -332,6 +367,17 @@ def create_container(container: Container):
         session.commit()
         session.refresh(container)
         return container
+
+
+@app.delete("/containers/{container_code}")
+def delete_container(container_code: str):
+    with Session(engine) as session:
+        container = session.get(Container, container_code)
+        if not container:
+            raise HTTPException(status_code=404, detail="Container not found")
+        session.delete(container)
+        session.commit()
+        return {"success": True}
 
 @app.post("/containers/entry")
 def container_entry(container: Container):

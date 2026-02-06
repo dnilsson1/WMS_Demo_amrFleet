@@ -1,11 +1,13 @@
 <script>
   import { writable } from "svelte/store";
-  import { createContainer, createContainerAndEnter, getProducts, getContainers } from "$lib/api";
+  import { createContainer, createContainerAndEnter, getProducts, getContainers, getFleetContainers, deleteContainer } from "$lib/api";
   import { ContainerType, EmptyStatus } from "$lib/constants";
   import { onMount } from "svelte";
 
   let containers = [];
   let products = [];
+  let fleetContainerCodes = new Set();
+  let fleetUnavailable = false;
   let newContainer = {
     containerCode: "",
     containerType: "RACK",
@@ -17,12 +19,51 @@
     contents: [],
   };
 
+  async function refreshContainers() {
+    containers = await getContainers();
+  }
+
+  async function refreshFleetContainers() {
+    const fleetContainers = await getFleetContainers();
+    fleetContainerCodes = new Set(fleetContainers);
+    fleetUnavailable = false;
+  }
+
+  function isMissingInFleet(containerCode) {
+    if (fleetUnavailable) {
+      return false;
+    }
+    return !fleetContainerCodes.has(containerCode);
+  }
+
+  async function handleDeleteContainer(container) {
+    const confirmed = window.confirm(`Remove container ${container.containerCode} from the database?`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await deleteContainer(container.containerCode);
+      await refreshContainers();
+      alert(`Container ${container.containerCode} removed from DB.`);
+    } catch (error) {
+      alert(error?.message || `Failed to delete container ${container.containerCode}.`);
+    }
+  }
+
   onMount(async () => {
     try {
       products = await getProducts();
-      containers = await getContainers();
+      await refreshContainers();
     } catch (error) {
       console.error("Error initializing data:", error);
+    }
+
+    try {
+      await refreshFleetContainers();
+    } catch (error) {
+      fleetUnavailable = true;
+      console.error("Error loading fleet containers:", error);
     }
   });
 
@@ -67,10 +108,12 @@
         contents: [],
       };
 
-      alert("Container created locally.");
+      await refreshContainers();
+      await refreshFleetContainers();
+      alert("Container created and registered in Fleet Manager.");
     } catch (error) {
       console.error("Error creating container:", error);
-      alert("Failed to create container.");
+      alert(error?.message || "Failed to create container.");
     }
   }
 
@@ -108,10 +151,12 @@
         contents: [],
       };
 
+      await refreshContainers();
+      await refreshFleetContainers();
       alert("Container created and entered into Fleet Manager.");
     } catch (error) {
       console.error("Error creating & entering container:", error);
-      alert("Failed to create & enter container.");
+      alert(error?.message || "Failed to create & enter container.");
     }
   }
 
@@ -178,5 +223,42 @@
         <button type="button" on:click={handleCreateAndEnterContainer} class="bg-blue-500 text-white px-4 py-2 rounded">Create & Enter</button>
       </div>
     </form>
+  </div>
+
+  <div class="card p-4">
+    <h2 class="text-xl font-bold mb-4">Container Sync Status</h2>
+    {#if fleetUnavailable}
+      <p class="text-red-700 mb-3">Fleet Manager unavailable. Sync status may be incomplete.</p>
+    {/if}
+    {#if containers.length === 0}
+      <p class="text-gray-600">No containers found in the database.</p>
+    {:else}
+      <div class="space-y-2">
+        {#each containers as container}
+          <div
+            class={`flex items-center justify-between border p-2 rounded ${isMissingInFleet(container.containerCode) ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"}`}
+          >
+            <span>
+              <span class="font-semibold">{container.containerCode}</span>
+              <span class="ml-2 text-sm text-gray-600">{container.position}</span>
+            </span>
+            <div class="flex items-center gap-3">
+              <span class={`text-sm font-semibold ${isMissingInFleet(container.containerCode) ? "text-red-700" : "text-green-700"}`}>
+                {isMissingInFleet(container.containerCode) ? "Missing in Fleet Manager" : "In Sync"}
+              </span>
+              {#if isMissingInFleet(container.containerCode)}
+                <button
+                  type="button"
+                  on:click={() => handleDeleteContainer(container)}
+                  class="bg-red-600 text-white font-semibold py-1 px-3 rounded hover:bg-red-700 transition duration-200"
+                >
+                  Remove from DB
+                </button>
+              {/if}
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
   </div>
 </div>

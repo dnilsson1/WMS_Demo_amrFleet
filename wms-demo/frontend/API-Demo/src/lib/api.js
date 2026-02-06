@@ -61,6 +61,20 @@ export async function getContainers() {
   }
 }
 
+export async function getFleetContainers() {
+  try {
+    const response = await fetch(`${API_BASE}/containers/fleet`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch fleet containers: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.containers || [];
+  } catch (error) {
+    console.error("Error fetching fleet containers:", error);
+    throw error;
+  }
+}
+
 
 export async function createContainer(container) {
   try {
@@ -128,6 +142,28 @@ export async function addProductToContainer(containerCode, productId, quantity) 
     }
   );
   return await response.json();
+}
+
+export async function deleteContainer(containerCode) {
+  try {
+    const response = await fetch(`${API_BASE}/containers/${encodeURIComponent(containerCode)}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) {
+      let detail = "Failed to delete container";
+      try {
+        const errorData = await response.json();
+        detail = errorData.detail || detail;
+      } catch {
+        // ignore JSON parsing errors
+      }
+      throw new Error(detail);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Error deleting container:", error);
+    throw error;
+  }
 }
 
 // Order APIs
