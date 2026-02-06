@@ -4,8 +4,6 @@ services:
   backend:
     build:
       context: ./wms-demo/backend
-    ports:
-      - "8000:8000"
     volumes:
       - ./wms-demo/backend:/app
     environment:
@@ -17,7 +15,7 @@ services:
     build:
       context: ./wms-demo/frontend/API-Demo
     ports:
-      - "5173:5173"
+      - "4173:4173"
     environment:
       - PUBLIC_API_BASE=/api
     volumes:
