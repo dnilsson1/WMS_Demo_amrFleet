@@ -8,7 +8,7 @@ import httpx
 import uuid
 from datetime import datetime
 from sqlalchemy.exc import SQLAlchemyError
-from schemas import OrderCreate, OrderItemCreate, StockAdjustment, PickOrderRequest
+from schemas import OrderCreate, OrderItemCreate, StockAdjustment, PickOrderRequest, PointUpdate
 
 DATABASE_URL = "sqlite:///./app.db"
 
@@ -31,6 +31,7 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup():
     SQLModel.metadata.create_all(engine)
+    ensure_ipconfig_columns()
     # Initialize SKU Counter
     with Session(engine) as session:
         sku_counter = session.get(SKUCounter, 1)
@@ -46,10 +47,20 @@ def load_config():
     with Session(engine) as session:
         config_entry = session.query(IPConfig).first()
         if config_entry:
-            return {"ip": config_entry.ip, "port": config_entry.port}
+            return {
+                "ip": config_entry.ip,
+                "port": config_entry.port,
+                "org_id": config_entry.org_id,
+                "access_token": config_entry.access_token,
+            }
         else:
             # If no configuration exists, set default values
-            default_config = {"ip": "127.0.0.1", "port": "8000"}
+            default_config = {
+                "ip": "127.0.0.1",
+                "port": "8000",
+                "org_id": None,
+                "access_token": None,
+            }
             save_config(default_config)
             return default_config
 
@@ -62,11 +73,29 @@ def save_config(config):
             # Update the existing configuration
             existing_config.ip = config["ip"]
             existing_config.port = config["port"]
+            existing_config.org_id = config.get("org_id")
+            existing_config.access_token = config.get("access_token")
         else:
             # Create a new configuration entry
-            new_config = IPConfig(ip=config["ip"], port=config["port"])
+            new_config = IPConfig(
+                ip=config["ip"],
+                port=config["port"],
+                org_id=config.get("org_id"),
+                access_token=config.get("access_token"),
+            )
             session.add(new_config)
         session.commit()
+
+
+def ensure_ipconfig_columns():
+    with engine.connect() as connection:
+        result = connection.exec_driver_sql("PRAGMA table_info(ipconfig)")
+        existing_columns = {row[1] for row in result.fetchall()}
+        if "org_id" not in existing_columns:
+            connection.exec_driver_sql("ALTER TABLE ipconfig ADD COLUMN org_id TEXT")
+        if "access_token" not in existing_columns:
+            connection.exec_driver_sql("ALTER TABLE ipconfig ADD COLUMN access_token TEXT")
+        connection.commit()
 
 
 
@@ -77,12 +106,21 @@ def get_base_url():
     return f"http://{ip}:{port}"
 
 
+def get_fleet_headers():
+    config = load_config()
+    headers = {"Content-Type": "application/json"}
+    access_token = config.get("access_token")
+    if access_token:
+        headers["Authorization"] = access_token
+    return headers
+
+
 
 # Fetch area codes from the external API
 def get_area_codes():
     base_url = get_base_url()
     api_url = f"{base_url}/interfaces/api/amr/areaQuery"
-    headers = {"Content-Type": "application/json"}
+    headers = get_fleet_headers()
     try:
         response = httpx.get(api_url, headers=headers)
         response.raise_for_status()
@@ -103,7 +141,7 @@ def get_area_codes():
 def get_nodes_in_areas(area_codes):
     base_url = get_base_url()
     api_url = f"{base_url}/interfaces/api/amr/areaNodesQuery"
-    headers = {"Content-Type": "application/json"}
+    headers = get_fleet_headers()
     payload = {"areaCodes": area_codes}
     try:
         response = httpx.post(api_url, json=payload, headers=headers)
@@ -157,7 +195,12 @@ def set_ip(ip_request: IPConfig):
     if not ip_request.ip or not ip_request.port:
         raise HTTPException(status_code=400, detail="IP and Port are required.")
 
-    config = {"ip": ip_request.ip, "port": ip_request.port}
+    config = {
+        "ip": ip_request.ip,
+        "port": ip_request.port,
+        "org_id": ip_request.org_id,
+        "access_token": ip_request.access_token,
+    }
     save_config(config)
     return {"success": True, "message": "IP and Port updated successfully."}
 
@@ -291,7 +334,7 @@ def container_entry(container: Container):
     # Prepare payload for the external API
     base_url = get_base_url()
     api_url = f"{base_url}/interfaces/api/amr/containerIn"
-    headers = {"Content-Type": "application/json"}
+    headers = get_fleet_headers()
 
     try:
         response = httpx.post(api_url, json=container_data, headers=headers)
@@ -339,7 +382,7 @@ def query_container_info(container_code: str):
     base_url = get_base_url()
     api_url = f"{base_url}/interfaces/api/amr/containerQuery"
     payload = {"containerCode": container_code}
-    headers = {"Content-Type": "application/json"}
+    headers = get_fleet_headers()
 
     try:
         response = httpx.post(api_url, json=payload, headers=headers)
@@ -369,7 +412,10 @@ def query_container_info(container_code: str):
 def submit_mission(mission_payload):
     base_url = get_base_url()
     api_url = f"{base_url}/interfaces/api/amr/submitMission"
-    headers = {"Content-Type": "application/json"}
+    headers = get_fleet_headers()
+    org_id = load_config().get("org_id")
+    if org_id and "orgId" not in mission_payload:
+        mission_payload = {**mission_payload, "orgId": org_id}
 
     try:
         response = httpx.post(api_url, json=mission_payload, headers=headers)
@@ -491,7 +537,6 @@ def pick_order(order_id: str, payload: PickOrderRequest):
             request_id = str(uuid.uuid4())
             mission_code = f"mission_{request_id}"
             mission_payload = {
-                "orgId": "UNIVERSAL",
                 "requestId": request_id,
                 "missionCode": mission_code,
                 "missionType": "RACK_MOVE",
@@ -564,14 +609,26 @@ def add_point(point: Point):
 
 @app.get("/points/", response_model=List[Point])
 def list_points():
+    # Best-effort sync from fleet manager, but always return stored points.
     try:
-        points = get_points()
-        return points
-    except HTTPException:
-        # Fleet manager API unavailable or returned error
-        return []
+        get_points()
     except Exception:
-        return []
+        pass
+    with Session(engine) as session:
+        return session.exec(select(Point)).all()
+
+
+@app.put("/points/{point_name}", response_model=Point)
+def update_point_name(point_name: str, payload: PointUpdate):
+    with Session(engine) as session:
+        point = session.get(Point, point_name)
+        if not point:
+            raise HTTPException(status_code=404, detail="Point not found")
+        point.wms_name = payload.new_name
+        session.add(point)
+        session.commit()
+        session.refresh(point)
+        return point
 
 
 @app.delete("/points/{point_name}")

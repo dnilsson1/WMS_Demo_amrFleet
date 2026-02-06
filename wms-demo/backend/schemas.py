@@ -17,3 +17,7 @@ class StockAdjustment(BaseModel):
 
 class PickOrderRequest(BaseModel):
     destination_name: str
+
+
+class PointUpdate(BaseModel):
+    new_name: str

@@ -187,6 +187,19 @@ export async function setIpConfig(ipConfig) {
   }
 }
 
+export async function getIpConfig() {
+  try {
+    const response = await fetch(`${API_BASE}/get-ip`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch IP config: ${response.statusText}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching IP config:", error);
+    throw error;
+  }
+}
+
 // Get points from Fleet manager
 export async function getPoints() {
   try {

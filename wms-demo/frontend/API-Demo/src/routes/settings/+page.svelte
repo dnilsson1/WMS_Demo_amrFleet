@@ -1,11 +1,13 @@
 <script>
   import { writable } from "svelte/store";
-  import { setIpConfig, getPoints, updatePointName, addPoint } from "$lib/api";
+  import { setIpConfig, getIpConfig, getPoints, updatePointName, addPoint } from "$lib/api";
   import { onMount } from "svelte";
   // import { debounce } from "lodash"; // If using debounce
 
   let ip = writable("127.0.0.1");
   let port = writable("8000");
+  let orgId = writable("");
+  let accessToken = writable("");
   let feedbackMessage = writable("");
   let feedbackType = writable("");
 
@@ -18,6 +20,20 @@
 
   onMount(async () => {
     try {
+      const config = await getIpConfig();
+      if (config?.ip) {
+        ip.set(config.ip);
+      }
+      if (config?.port) {
+        port.set(config.port);
+      }
+      orgId.set(config?.org_id || "");
+      accessToken.set(config?.access_token || "");
+    } catch (error) {
+      console.error('Error fetching IP config:', error);
+    }
+
+    try {
       points = await getPoints();
     } catch (error) {
       console.error('Error fetching points:', error);
@@ -25,7 +41,12 @@
   });
 
   async function updateIP() {
-    const payload = { ip: $ip, port: $port };
+    const payload = {
+      ip: $ip,
+      port: $port,
+      org_id: $orgId,
+      access_token: $accessToken
+    };
 
     try {
       const response = await setIpConfig(payload);
@@ -103,6 +124,16 @@
       <div>
         <label for="port" class="block font-medium">Port:</label>
         <input id="port" type="text" bind:value={$port} class="w-full border p-2 rounded" />
+      </div>
+
+      <div>
+        <label for="org-id" class="block font-medium">Org ID:</label>
+        <input id="org-id" type="text" bind:value={$orgId} class="w-full border p-2 rounded" />
+      </div>
+
+      <div>
+        <label for="access-token" class="block font-medium">Access Token:</label>
+        <input id="access-token" type="password" bind:value={$accessToken} class="w-full border p-2 rounded" />
       </div>
 
       <button type="submit" class="bg-blue-600 text-white font-semibold py-2 px-6 rounded hover:bg-blue-700 transition duration-200">

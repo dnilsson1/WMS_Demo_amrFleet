@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 class IPConfig(SQLModel, table=True):
     ip: str = Field(primary_key=True)
     port: str
+    org_id: Optional[str] = None
+    access_token: Optional[str] = None
 
 class ContainerType(str, Enum):
     RACK = "Rack"
