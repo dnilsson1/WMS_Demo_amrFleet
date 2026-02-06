@@ -8,7 +8,7 @@ import httpx
 import uuid
 from datetime import datetime
 from sqlalchemy.exc import SQLAlchemyError
-from schemas import OrderCreate, OrderItemCreate, StockAdjustment
+from schemas import OrderCreate, OrderItemCreate, StockAdjustment, PickOrderRequest
 
 DATABASE_URL = "sqlite:///./app.db"
 
@@ -405,6 +405,8 @@ def create_order(order_data: OrderCreate):
             # Validate stock availability and adjust stock
             order_items = []
             for item_data in order_data.items:
+                if not item_data.product_id:
+                    raise HTTPException(status_code=400, detail="Product ID is required")
                 product = session.get(Product, item_data.product_id)
                 if not product:
                     raise HTTPException(status_code=404, detail=f"Product {item_data.product_id} not found")
@@ -438,7 +440,7 @@ def create_order(order_data: OrderCreate):
 # **Updated pick_order Endpoint**
 
 @app.post("/orders/{order_id}/pick")
-def pick_order(order_id: str, destination_name: str):
+def pick_order(order_id: str, payload: PickOrderRequest):
     with Session(engine) as session:
         order = session.get(Order, order_id)
         if not order:
@@ -446,8 +448,12 @@ def pick_order(order_id: str, destination_name: str):
         if order.status != "confirmed":
             raise HTTPException(status_code=400, detail="Order is not in 'confirmed' status")
 
-        # Get the destination point
-        destination = session.get(Point, destination_name)
+        # Get the destination point (match by name or WMS-mapped name)
+        destination = session.get(Point, payload.destination_name)
+        if not destination:
+            destination = session.exec(
+                select(Point).where(Point.wms_name == payload.destination_name)
+            ).first()
         if not destination:
             raise HTTPException(status_code=404, detail="Destination not found")
 
@@ -561,10 +567,11 @@ def list_points():
     try:
         points = get_points()
         return points
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        # Fleet manager API unavailable or returned error
+        return []
+    except Exception:
+        return []
 
 
 @app.delete("/points/{point_name}")

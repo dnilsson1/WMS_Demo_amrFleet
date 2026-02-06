@@ -14,3 +14,6 @@ class OrderCreate(BaseModel):
 class StockAdjustment(BaseModel):
     quantity: int
     container_code: Optional[str] = None
+
+class PickOrderRequest(BaseModel):
+    destination_name: str

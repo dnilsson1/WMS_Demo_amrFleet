@@ -13,11 +13,28 @@
   });
 
   async function handleCreateOrder() {
-    const orderData = { items: orderItems };
-    const order = await createOrder(orderData);
-    orderItems = [{ product_id: "", quantity: 1 }];
-    // Reload orders
-    orders = await getOrders();
+    const cleanedItems = orderItems
+      .map((item) => ({
+        product_id: (item.product_id || "").trim(),
+        quantity: Number(item.quantity)
+      }))
+      .filter((item) => item.product_id && Number.isFinite(item.quantity) && item.quantity > 0);
+
+    if (cleanedItems.length === 0) {
+      alert("Please select at least one product with a valid quantity.");
+      return;
+    }
+
+    try {
+      const orderData = { items: cleanedItems };
+      await createOrder(orderData);
+      orderItems = [{ product_id: "", quantity: 1 }];
+      // Reload orders
+      orders = await getOrders();
+    } catch (error) {
+      console.error("Error creating order:", error);
+      alert(error?.message || "Failed to create order.");
+    }
   }
 
   function addOrderItem() {
@@ -29,9 +46,14 @@
       alert("Please enter a destination name.");
       return;
     }
-    await pickOrder(orderId, destinationName);
-    // Reload orders
-    orders = await getOrders();
+    try {
+      await pickOrder(orderId, destinationName);
+      // Reload orders
+      orders = await getOrders();
+    } catch (error) {
+      console.error("Error picking order:", error);
+      alert(error?.message || "Failed to pick order.");
+    }
   }
 </script>
 

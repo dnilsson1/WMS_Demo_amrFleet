@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./wms-demo/backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./wms-demo/backend:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  frontend:
+    build:
+      context: ./wms-demo/frontend/API-Demo
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./wms-demo/frontend/API-Demo:/app
+      - /app/node_modules
+    depends_on:
+      - backend

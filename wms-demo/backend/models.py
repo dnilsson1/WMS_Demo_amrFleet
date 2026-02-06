@@ -55,7 +55,7 @@ class Container(SQLModel, table=True):
     emptyStatus: str = "EMPTY"  # Or use Enum if applicable
     containerModelCode: Optional[str] = None
     enterOrientation: Optional[str] = None  # Add this field
-    contents: Optional[dict] = None  # Assuming contents is a dictionary
+    contents: Optional[dict] = Field(default_factory=dict, sa_column=Column(JSON))  # Assuming contents is a dictionary
 
 
 class Order(SQLModel, table=True):

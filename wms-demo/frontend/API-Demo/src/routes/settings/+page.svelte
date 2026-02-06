@@ -1,6 +1,6 @@
 <script>
   import { writable } from "svelte/store";
-  import { setIpConfig, getPoints, updatePointName } from "$lib/api";
+  import { setIpConfig, getPoints, updatePointName, addPoint } from "$lib/api";
   import { onMount } from "svelte";
   // import { debounce } from "lodash"; // If using debounce
 
@@ -10,6 +10,11 @@
   let feedbackType = writable("");
 
   let points = [];
+  let newPoint = {
+    name: "",
+    position: "",
+    wms_name: ""
+  };
 
   onMount(async () => {
     try {
@@ -58,6 +63,29 @@
       feedbackType.set("error");
     }
   }
+
+  async function handleAddPoint() {
+    if (!newPoint.name || !newPoint.position) {
+      feedbackMessage.set("Point name and position are required.");
+      feedbackType.set("error");
+      return;
+    }
+
+    try {
+      await addPoint({
+        name: newPoint.name,
+        position: newPoint.position,
+        wms_name: newPoint.wms_name || newPoint.name
+      });
+      feedbackMessage.set(`Point ${newPoint.name} added successfully.`);
+      feedbackType.set("success");
+      newPoint = { name: "", position: "", wms_name: "" };
+      points = await getPoints();
+    } catch (error) {
+      feedbackMessage.set(error?.message || "Failed to add point.");
+      feedbackType.set("error");
+    }
+  }
 </script>
 
 <div class="container mx-auto p-8">
@@ -92,6 +120,11 @@
   <!-- Points Mapping Section -->
   <div class="card p-4 mt-8">
     <h2 class="text-xl font-bold mb-4">Point Name Mapping</h2>
+    {#if points.length === 0}
+      <p class="text-gray-600 mb-4">
+        No points available. Connect to Fleet Manager or add points manually below.
+      </p>
+    {/if}
     <dl class="list-dl">
       {#each points as point}
         <div class="flex items-center mb-2">
@@ -110,6 +143,32 @@
         </div>
       {/each}
     </dl>
+
+    <!-- Manual Add Point Section -->
+    <div class="mt-6 border-t pt-4">
+      <h3 class="text-lg font-bold mb-2">Add Point Manually</h3>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label for="new-point-name" class="block font-medium">Point Name:</label>
+          <input id="new-point-name" type="text" bind:value={newPoint.name} class="w-full border p-2 rounded" />
+        </div>
+        <div>
+          <label for="new-point-position" class="block font-medium">Position:</label>
+          <input id="new-point-position" type="text" bind:value={newPoint.position} class="w-full border p-2 rounded" />
+        </div>
+        <div>
+          <label for="new-point-wms" class="block font-medium">WMS Name (optional):</label>
+          <input id="new-point-wms" type="text" bind:value={newPoint.wms_name} class="w-full border p-2 rounded" />
+        </div>
+      </div>
+      <button
+        type="button"
+        on:click={handleAddPoint}
+        class="mt-4 bg-blue-600 text-white font-semibold py-2 px-6 rounded hover:bg-blue-700 transition duration-200"
+      >
+        Add Point
+      </button>
+    </div>
   </div>
 </div>
 

@@ -125,6 +125,16 @@ export async function createOrder(orderData) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(orderData),
   });
+  if (!response.ok) {
+    let detail = "Failed to create order";
+    try {
+      const errorData = await response.json();
+      detail = errorData.detail || detail;
+    } catch {
+      // ignore JSON parsing errors
+    }
+    throw new Error(detail);
+  }
   return await response.json();
 }
 
@@ -134,6 +144,19 @@ export async function pickOrder(orderId, destinationName) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ destination_name: destinationName }),
   });
+  if (!response.ok) {
+    let detail = "Failed to pick order";
+    try {
+      const errorData = await response.json();
+      detail = errorData.detail || detail;
+    } catch {
+      // ignore JSON parsing errors
+    }
+    if (response.status === 404 && detail === "Destination not found") {
+      detail = "The destination you typed doesn’t exist in points—add or map it first in Settings.";
+    }
+    throw new Error(detail);
+  }
   return await response.json();
 }
 
@@ -194,6 +217,24 @@ export async function updatePointName(pointName, newName) {
     return await response.json();
   } catch (error) {
     console.error("Error updating point name:", error);
+    throw error;
+  }
+}
+
+export async function addPoint(point) {
+  try {
+    const response = await fetch(`${API_BASE}/points/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(point),
+    });
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || "Failed to add point");
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Error adding point:", error);
     throw error;
   }
 }
