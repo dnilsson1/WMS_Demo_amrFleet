@@ -70,8 +70,14 @@ export async function createContainer(container) {
       body: JSON.stringify(container),
     });
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || 'Failed to create container');
+      let detail = "Failed to create container";
+      try {
+        const errorData = await response.json();
+        detail = errorData.detail || detail;
+      } catch {
+        // ignore JSON parsing errors
+      }
+      throw new Error(detail);
     }
     return await response.json();
   } catch (error) {
@@ -95,8 +101,14 @@ export async function createContainerAndEnter(container) {
       }),
     });
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || "Failed to create & enter container");
+      let detail = "Failed to create & enter container";
+      try {
+        const errorData = await response.json();
+        detail = errorData.detail || detail;
+      } catch {
+        // ignore JSON parsing errors
+      }
+      throw new Error(detail);
     }
     return await response.json();
   } catch (error) {

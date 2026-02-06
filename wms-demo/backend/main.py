@@ -32,6 +32,7 @@ app.add_middleware(
 def on_startup():
     SQLModel.metadata.create_all(engine)
     ensure_ipconfig_columns()
+    ensure_container_columns()
     # Initialize SKU Counter
     with Session(engine) as session:
         sku_counter = session.get(SKUCounter, 1)
@@ -95,6 +96,15 @@ def ensure_ipconfig_columns():
             connection.exec_driver_sql("ALTER TABLE ipconfig ADD COLUMN org_id TEXT")
         if "access_token" not in existing_columns:
             connection.exec_driver_sql("ALTER TABLE ipconfig ADD COLUMN access_token TEXT")
+        connection.commit()
+
+
+def ensure_container_columns():
+    with engine.connect() as connection:
+        result = connection.exec_driver_sql("PRAGMA table_info(container)")
+        existing_columns = {row[1] for row in result.fetchall()}
+        if "isNew" not in existing_columns:
+            connection.exec_driver_sql("ALTER TABLE container ADD COLUMN isNew INTEGER")
         connection.commit()
 
 
@@ -328,7 +338,7 @@ def container_entry(container: Container):
             "position": container.position,
             "containerModelCode": container.containerModelCode,
             "enterOrientation": container.enterOrientation,
-            "isNew": container.isNew,
+            "isNew": bool(container.isNew),
         }
 
     # Prepare payload for the external API
