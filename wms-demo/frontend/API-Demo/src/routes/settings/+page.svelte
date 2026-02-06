@@ -1,6 +1,6 @@
 <script>
   import { writable } from "svelte/store";
-  import { setIpConfig, getIpConfig, getPoints, updatePointName, addPoint } from "$lib/api";
+  import { setIpConfig, getIpConfig, getPoints, updatePoint, deletePoint, addPoint } from "$lib/api";
   import { onMount } from "svelte";
   // import { debounce } from "lodash"; // If using debounce
 
@@ -70,17 +70,34 @@
   //   }
   // }, 500);
 
-  async function savePointName(point) {
-    // If using debounce
-    // debouncedSavePointName(point);
-
-    // Without debounce
+  async function savePoint(point) {
     try {
-      await updatePointName(point.name, point.wms_name);
+      const wmsName = (point.wms_name || "").trim();
+      await updatePoint(point.name, {
+        position: point.position,
+        wms_name: wmsName ? wmsName : point.name
+      });
       feedbackMessage.set(`Point ${point.name} updated successfully.`);
       feedbackType.set("success");
     } catch (error) {
       feedbackMessage.set(`Failed to update point ${point.name}.`);
+      feedbackType.set("error");
+    }
+  }
+
+  async function handleDeletePoint(point) {
+    const confirmed = window.confirm(`Delete point ${point.name}? This cannot be undone.`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await deletePoint(point.name);
+      points = points.filter((p) => p.name !== point.name);
+      feedbackMessage.set(`Point ${point.name} deleted.`);
+      feedbackType.set("success");
+    } catch (error) {
+      feedbackMessage.set(`Failed to delete point ${point.name}.`);
       feedbackType.set("error");
     }
   }
@@ -158,19 +175,45 @@
     {/if}
     <dl class="list-dl">
       {#each points as point}
-        <div class="flex items-center mb-2">
-          <span class="badge bg-primary-500 mr-4">📍</span>
-          <span class="flex-auto">
-            <dt>{point.name}</dt>
-            <dd>
-              <input
-                type="text"
-                bind:value={point.wms_name}
-                on:change={() => savePointName(point)}
-                class="border p-1 rounded w-full"
-              />
+        <div class="flex items-start gap-4 mb-4">
+          <span class="badge bg-primary-500 mt-2">📍</span>
+          <div class="flex-auto">
+            <dt class="font-semibold">{point.name}</dt>
+            <dd class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
+              <div>
+                <label class="block text-sm font-medium">Position</label>
+                <input
+                  type="text"
+                  bind:value={point.position}
+                  class="border p-1 rounded w-full"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium">WMS Name</label>
+                <input
+                  type="text"
+                  bind:value={point.wms_name}
+                  class="border p-1 rounded w-full"
+                />
+              </div>
+              <div class="flex items-end gap-2">
+                <button
+                  type="button"
+                  on:click={() => savePoint(point)}
+                  class="bg-blue-600 text-white font-semibold py-1.5 px-4 rounded hover:bg-blue-700 transition duration-200"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  on:click={() => handleDeletePoint(point)}
+                  class="bg-red-600 text-white font-semibold py-1.5 px-4 rounded hover:bg-red-700 transition duration-200"
+                >
+                  Delete
+                </button>
+              </div>
             </dd>
-          </span>
+          </div>
         </div>
       {/each}
     </dl>

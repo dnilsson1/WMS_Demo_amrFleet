@@ -20,4 +20,5 @@ class PickOrderRequest(BaseModel):
 
 
 class PointUpdate(BaseModel):
-    new_name: str
+    position: Optional[str] = None
+    wms_name: Optional[str] = None

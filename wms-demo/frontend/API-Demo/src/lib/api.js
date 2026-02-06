@@ -214,22 +214,40 @@ export async function getPoints() {
   }
 }
 
-export async function updatePointName(pointName, newName) {
+export async function updatePoint(pointName, updates) {
   try {
     const response = await fetch(
       `${API_BASE}/points/${encodeURIComponent(pointName)}`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ new_name: newName }),
+        body: JSON.stringify(updates),
       }
     );
     if (!response.ok) {
-      throw new Error(`Failed to update point name: ${response.statusText}`);
+      throw new Error(`Failed to update point: ${response.statusText}`);
     }
     return await response.json();
   } catch (error) {
-    console.error("Error updating point name:", error);
+    console.error("Error updating point:", error);
+    throw error;
+  }
+}
+
+export async function deletePoint(pointName) {
+  try {
+    const response = await fetch(
+      `${API_BASE}/points/${encodeURIComponent(pointName)}`,
+      {
+        method: "DELETE",
+      }
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to delete point: ${response.statusText}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Error deleting point:", error);
     throw error;
   }
 }

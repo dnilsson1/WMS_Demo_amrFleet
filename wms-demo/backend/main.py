@@ -624,7 +624,10 @@ def update_point_name(point_name: str, payload: PointUpdate):
         point = session.get(Point, point_name)
         if not point:
             raise HTTPException(status_code=404, detail="Point not found")
-        point.wms_name = payload.new_name
+        if payload.position is not None:
+            point.position = payload.position
+        if payload.wms_name is not None:
+            point.wms_name = payload.wms_name
         session.add(point)
         session.commit()
         session.refresh(point)
