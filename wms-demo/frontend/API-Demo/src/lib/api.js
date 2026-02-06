@@ -64,7 +64,7 @@ export async function getContainers() {
 
 export async function createContainer(container) {
   try {
-    const response = await fetch(`${API_BASE}/containers/entry`, {
+    const response = await fetch(`${API_BASE}/containers/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(container),

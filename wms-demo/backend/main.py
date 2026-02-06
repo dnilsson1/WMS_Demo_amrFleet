@@ -317,6 +317,22 @@ def list_containers():
         containers = session.exec(select(Container)).all()
         return containers
 
+
+@app.post("/containers/", response_model=Container)
+def create_container(container: Container):
+    with Session(engine) as session:
+        existing_container = session.get(Container, container.containerCode)
+        if existing_container:
+            raise HTTPException(status_code=400, detail="Container already exists")
+        session.add(container)
+
+        for product_id, quantity in container.contents.items():
+            adjust_stock(product_id, quantity, container.containerCode)
+
+        session.commit()
+        session.refresh(container)
+        return container
+
 @app.post("/containers/entry")
 def container_entry(container: Container):
     with Session(engine) as session:
