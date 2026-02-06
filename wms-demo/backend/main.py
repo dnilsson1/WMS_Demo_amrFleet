@@ -349,7 +349,13 @@ def container_entry(container: Container):
     try:
         response = httpx.post(api_url, json=container_data, headers=headers)
         response.raise_for_status()
-        response_data = response.json()
+        try:
+            response_data = response.json()
+        except ValueError:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Fleet manager returned non-JSON response: {response.text}",
+            )
         if response_data.get("success"):
             return {"requestId": container_data["requestId"], "success": True}
         else:
