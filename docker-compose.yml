@@ -10,14 +10,24 @@ services:
       - ./wms-demo/backend:/app
     environment:
       - PYTHONUNBUFFERED=1
+    networks:
+      - server
 
   frontend:
     build:
       context: ./wms-demo/frontend/API-Demo
     ports:
       - "5173:5173"
+    environment:
+      - PUBLIC_API_BASE=/api
     volumes:
       - ./wms-demo/frontend/API-Demo:/app
       - /app/node_modules
     depends_on:
       - backend
+    networks:
+      - server
+
+networks:
+  server:
+    external: true

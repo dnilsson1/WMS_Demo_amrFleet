@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:8000";
+const API_BASE = import.meta.env.PUBLIC_API_BASE || "/api";
 
 // Product APIs
 export async function createProduct(product) {
