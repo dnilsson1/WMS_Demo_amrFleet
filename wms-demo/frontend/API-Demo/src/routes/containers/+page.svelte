@@ -36,15 +36,18 @@
 
   async function handleCreateContainer() {
     try {
-      if (!newContainer.containerCode || !newContainer.position) {
+      const containerCode = (newContainer.containerCode || "").trim();
+      const position = (newContainer.position || "").trim();
+
+      if (!containerCode || !position) {
         alert("Container code and position are required.");
         return;
       }
 
       const containerData = {
-        containerCode: newContainer.containerCode,
+        containerCode,
         containerType: newContainer.containerType,
-        position: newContainer.position,
+        position,
         emptyStatus: newContainer.emptyStatus,
         contents: Object.fromEntries(newContainer.contents.map((item) => [item.product_id, item.quantity])),
       };
@@ -73,15 +76,18 @@
 
   async function handleCreateAndEnterContainer() {
     try {
-      if (!newContainer.containerCode || !newContainer.position) {
+      const containerCode = (newContainer.containerCode || "").trim();
+      const position = (newContainer.position || "").trim();
+
+      if (!containerCode || !position) {
         alert("Container code and position are required.");
         return;
       }
 
       const containerData = {
-        containerCode: newContainer.containerCode,
+        containerCode,
         containerType: newContainer.containerType,
-        position: newContainer.position,
+        position,
         containerModelCode: newContainer.containerModelCode,
         enterOrientation: newContainer.enterOrientation,
         isNew: newContainer.isNew,
