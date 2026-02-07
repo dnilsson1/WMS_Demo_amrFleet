@@ -22,3 +22,9 @@ class PickOrderRequest(BaseModel):
 class PointUpdate(BaseModel):
     position: Optional[str] = None
     wms_name: Optional[str] = None
+
+
+class ReceivingScanRequest(BaseModel):
+    product_sku: str
+    quantity: int
+    container_code: str

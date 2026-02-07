@@ -9,6 +9,9 @@
 		"format": "prettier --write .",
 		"lint": "prettier --check . && eslint ."
 	},
+	"dependencies": {
+		"chart.js": "^4.4.0"
+	},
 	"devDependencies": {
 		"@sveltejs/adapter-node": "^3.0.0",
 		"@skeletonlabs/skeleton": "^2.10.3",

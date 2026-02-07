@@ -1,20 +1,31 @@
 # backend/main.py
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.responses import Response
+from fastapi.security import OAuth2PasswordRequestForm
 from typing import List, Optional
 from sqlmodel import SQLModel, Session, create_engine, select, delete
 from models import *
 import httpx
 import uuid
+import asyncio
+import os
 from datetime import datetime
 from sqlalchemy.exc import SQLAlchemyError
-from schemas import OrderCreate, OrderItemCreate, StockAdjustment, PickOrderRequest, PointUpdate
+from schemas import OrderCreate, OrderItemCreate, StockAdjustment, PickOrderRequest, PointUpdate, ReceivingScanRequest
+from services.mission_monitor import start_mission_monitor
+from services.label_printer import generate_label_pdf
+from routes.analytics import get_analytics_router
+from auth import authenticate_user, create_access_token, get_current_user_factory, get_password_hash
 
 DATABASE_URL = "sqlite:///./app.db"
 
 engine = create_engine(DATABASE_URL, echo=True)
+get_current_user = get_current_user_factory(engine)
 
 app = FastAPI()
+mission_monitor_task = None
+app.include_router(get_analytics_router(engine))
 
 # CORS middleware
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,10 +40,11 @@ app.add_middleware(
 
 # Create the database tables
 @app.on_event("startup")
-def on_startup():
+async def on_startup():
     SQLModel.metadata.create_all(engine)
     ensure_ipconfig_columns()
     ensure_container_columns()
+    ensure_product_columns()
     # Initialize SKU Counter
     with Session(engine) as session:
         sku_counter = session.get(SKUCounter, 1)
@@ -40,8 +52,31 @@ def on_startup():
             sku_counter = SKUCounter()
             session.add(sku_counter)
             session.commit()
+        existing_user = session.exec(select(User)).first()
+        default_password = os.environ.get("DEFAULT_ADMIN_PASSWORD")
+        if not existing_user and default_password:
+            default_user = User(
+                username="admin",
+                password_hash=get_password_hash(default_password),
+                role="admin",
+            )
+            session.add(default_user)
+            session.commit()
     global ip_config
     ip_config = load_config()
+    global mission_monitor_task
+    mission_monitor_task = start_mission_monitor(get_base_url, get_fleet_headers, engine)
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    global mission_monitor_task
+    if mission_monitor_task:
+        mission_monitor_task.cancel()
+        try:
+            await mission_monitor_task
+        except asyncio.CancelledError:
+            pass
 
 # Update the load_config and save_config functions
 def load_config():
@@ -105,6 +140,21 @@ def ensure_container_columns():
         existing_columns = {row[1] for row in result.fetchall()}
         if "isNew" not in existing_columns:
             connection.exec_driver_sql("ALTER TABLE container ADD COLUMN isNew INTEGER")
+        if "max_capacity" not in existing_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE container ADD COLUMN max_capacity INTEGER"
+            )
+        connection.commit()
+
+
+def ensure_product_columns():
+    with engine.connect() as connection:
+        result = connection.exec_driver_sql("PRAGMA table_info(product)")
+        existing_columns = {row[1] for row in result.fetchall()}
+        if "allocated_stock" not in existing_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE product ADD COLUMN allocated_stock INTEGER DEFAULT 0"
+            )
         connection.commit()
 
 
@@ -197,7 +247,7 @@ def get_points():
 
 # Endpoint to update the IP and Port configuration
 @app.post("/set-ip")
-def set_ip(ip_request: IPConfig):
+def set_ip(ip_request: IPConfig, user: User = Depends(get_current_user)):
     # Debugging: Log the received data
     print(f"Received IP Request: {ip_request}")
 
@@ -217,9 +267,19 @@ def set_ip(ip_request: IPConfig):
 
 # Endpoint to get the current IP and Port configuration
 @app.get("/get-ip")
-def get_ip():
+def get_ip(user: User = Depends(get_current_user)):
     config = load_config()
     return config
+
+
+@app.post("/auth/token")
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    with Session(engine) as session:
+        user = authenticate_user(session, form_data.username, form_data.password)
+        if not user:
+            raise HTTPException(status_code=401, detail="Incorrect username or password")
+        access_token = create_access_token({"sub": user.username})
+        return {"access_token": access_token, "token_type": "bearer", "role": user.role}
 
 
 # Product endpoints
@@ -248,6 +308,21 @@ def list_products():
     with Session(engine) as session:
         products = session.exec(select(Product)).all()
         return products
+
+
+@app.get("/products/{product_id}/label")
+def get_product_label(product_id: str, user: User = Depends(get_current_user)):
+    with Session(engine) as session:
+        product = session.get(Product, product_id)
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        sku = product.sku or product.id
+        pdf_data = generate_label_pdf(sku)
+        return Response(
+            content=pdf_data,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename=label-{sku}.pdf"},
+        )
 
 @app.post("/products/{product_id}/adjust-stock")
 def adjust_stock(product_id: str, adjustment: StockAdjustment):
@@ -288,6 +363,62 @@ def adjust_stock(product_id: str, adjustment: StockAdjustment):
 
         session.commit()
         return {"success": True, "new_stock_level": product.current_stock}
+
+
+@app.post("/receiving/scan")
+def receiving_scan(payload: ReceivingScanRequest, user: User = Depends(get_current_user)):
+    if payload.quantity <= 0:
+        raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
+    with Session(engine) as session:
+        container = session.get(Container, payload.container_code)
+        if not container:
+            raise HTTPException(status_code=404, detail="Container not found")
+
+        contents_snapshot = container.contents or {}
+        current_qty = sum(contents_snapshot.values()) if contents_snapshot else 0
+        if container.max_capacity is not None:
+            if current_qty + payload.quantity > container.max_capacity:
+                raise HTTPException(status_code=400, detail="Container Full")
+
+        product = session.exec(
+            select(Product).where(Product.sku == payload.product_sku)
+        ).first()
+        if not product:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "PRODUCT_NOT_FOUND",
+                    "message": "Product SKU not found. Create the product before receiving.",
+                },
+            )
+
+        product.current_stock += payload.quantity
+        session.add(product)
+
+        movement = InventoryMovement(
+            product_id=product.id,
+            quantity=payload.quantity,
+            container_code=payload.container_code,
+            movement_type="in",
+            reference="receiving_scan",
+        )
+        session.add(movement)
+
+        contents = container.contents or {}
+        contents[product.id] = contents.get(product.id, 0) + payload.quantity
+        container.contents = contents
+        container.emptyStatus = EmptyStatus.EMPTY if not contents else EmptyStatus.FULL
+        session.add(container)
+
+        session.commit()
+        session.refresh(product)
+
+        return {
+            "success": True,
+            "product_id": product.id,
+            "new_stock_level": product.current_stock,
+            "container_code": container.containerCode,
+        }
 
 # Inventory movements endpoint
 @app.get("/inventory/movements", response_model=List[InventoryMovement])
@@ -454,6 +585,27 @@ def find_containers_with_product(session: Session, product_id: str):
     for container in containers:
         if product_id in (container.contents or {}):
             containers_with_product.append(container)
+
+    if not containers_with_product:
+        return []
+
+    movement_rows = session.exec(
+        select(InventoryMovement)
+        .where(InventoryMovement.product_id == product_id)
+        .where(InventoryMovement.container_code != None)
+        .where(InventoryMovement.movement_type == "in")
+        .order_by(InventoryMovement.timestamp.asc())
+    ).all()
+
+    entry_time_by_container = {}
+    for movement in movement_rows:
+        container_code = movement.container_code
+        if container_code and container_code not in entry_time_by_container:
+            entry_time_by_container[container_code] = movement.timestamp
+
+    containers_with_product.sort(
+        key=lambda container: entry_time_by_container.get(container.containerCode, datetime.max)
+    )
     return containers_with_product
 
 def query_container_info(container_code: str):
@@ -512,6 +664,32 @@ def submit_mission(mission_payload):
             detail=f"Failed to connect to fleet manager API: {str(e)}",
         )
 
+
+def cancel_mission(container_code: str):
+    base_url = get_base_url()
+    api_url = f"{base_url}/interfaces/api/amr/missionCancel"
+    headers = get_fleet_headers()
+    payload = {
+        "requestId": str(uuid.uuid4()),
+        "containerCode": container_code,
+        "cancelMode": "FORCE",
+    }
+
+    try:
+        response = httpx.post(api_url, json=payload, headers=headers)
+        response.raise_for_status()
+        response_data = response.json()
+        if response_data.get("success"):
+            return response_data
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to cancel mission: {response_data.get('message')}",
+        )
+    except httpx.HTTPError as e:
+        raise HTTPException(
+            status_code=502, detail=f"Failed to connect to fleet manager API: {str(e)}"
+        )
+
 # List orders
 @app.get("/orders/", response_model=List[Order])
 def list_orders():
@@ -523,7 +701,7 @@ def list_orders():
 
 # Create order
 @app.post("/orders/create", response_model=Order)
-def create_order(order_data: OrderCreate):
+def create_order(order_data: OrderCreate, user: User = Depends(get_current_user)):
     with Session(engine) as session:
         try:
             # Validate stock availability and adjust stock
@@ -534,11 +712,12 @@ def create_order(order_data: OrderCreate):
                 product = session.get(Product, item_data.product_id)
                 if not product:
                     raise HTTPException(status_code=404, detail=f"Product {item_data.product_id} not found")
-                if product.current_stock < item_data.quantity:
+                available_stock = product.current_stock - product.allocated_stock
+                if available_stock < item_data.quantity:
                     raise HTTPException(status_code=400, detail=f"Insufficient stock for product {item_data.product_id}")
 
-                # Adjust stock levels
-                product.current_stock -= item_data.quantity
+                # Reserve stock instead of deducting immediately
+                product.allocated_stock += item_data.quantity
                 session.add(product)
 
                 # Create OrderItem instance
@@ -658,6 +837,35 @@ def pick_order(order_id: str, payload: PickOrderRequest):
 
         return order
 
+
+@app.post("/orders/{order_id}/cancel")
+def cancel_order(order_id: str, user: User = Depends(get_current_user)):
+    with Session(engine) as session:
+        order = session.get(Order, order_id)
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if order.status in {"completed", "cancelled"}:
+            raise HTTPException(status_code=400, detail="Order cannot be cancelled")
+
+        assigned_containers = order.assignedContainers or []
+        for container_code in assigned_containers:
+            cancel_mission(container_code)
+
+        order_items = session.exec(
+            select(OrderItem).where(OrderItem.order_id == order_id)
+        ).all()
+        for item in order_items:
+            product = session.get(Product, item.product_id)
+            if not product:
+                raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
+            product.allocated_stock = max(product.allocated_stock - item.quantity, 0)
+            session.add(product)
+
+        order.status = "cancelled"
+        session.add(order)
+        session.commit()
+        return {"success": True, "message": "Order cancelled"}
+
 # **complete_order Endpoint**
 
 @app.post("/orders/{order_id}/complete")
@@ -668,6 +876,16 @@ def complete_order(order_id: str):
             raise HTTPException(status_code=404, detail="Order not found")
         if order.status != "picking":
             raise HTTPException(status_code=400, detail="Order is not in 'picking' status")
+        order_items = session.exec(
+            select(OrderItem).where(OrderItem.order_id == order_id)
+        ).all()
+        for item in order_items:
+            product = session.get(Product, item.product_id)
+            if not product:
+                raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
+            product.current_stock -= item.quantity
+            product.allocated_stock = max(product.allocated_stock - item.quantity, 0)
+            session.add(product)
         # Update order status to 'completed'
         order.status = "completed"
         session.add(order)
@@ -676,7 +894,7 @@ def complete_order(order_id: str):
 
 # Point management Section
 @app.post("/points/", response_model=Point)
-def add_point(point: Point):
+def add_point(point: Point, user: User = Depends(get_current_user)):
     with Session(engine) as session:
         existing_point = session.get(Point, point.name)
         if existing_point:
@@ -686,7 +904,7 @@ def add_point(point: Point):
         return point
 
 @app.get("/points/", response_model=List[Point])
-def list_points():
+def list_points(user: User = Depends(get_current_user)):
     # Best-effort sync from fleet manager, but always return stored points.
     try:
         get_points()
@@ -697,7 +915,7 @@ def list_points():
 
 
 @app.put("/points/{point_name}", response_model=Point)
-def update_point_name(point_name: str, payload: PointUpdate):
+def update_point_name(point_name: str, payload: PointUpdate, user: User = Depends(get_current_user)):
     with Session(engine) as session:
         point = session.get(Point, point_name)
         if not point:
@@ -713,7 +931,7 @@ def update_point_name(point_name: str, payload: PointUpdate):
 
 
 @app.delete("/points/{point_name}")
-def delete_point(point_name: str):
+def delete_point(point_name: str, user: User = Depends(get_current_user)):
     with Session(engine) as session:
         point = session.get(Point, point_name)
         if point:

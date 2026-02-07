@@ -45,6 +45,27 @@ export async function adjustStock(productId, quantity, containerCode = null) {
   return await response.json();
 }
 
+export async function receivingScan(payload) {
+  const response = await fetch(`${API_BASE}/receiving/scan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    let detail = "Failed to receive stock";
+    try {
+      const errorData = await response.json();
+      detail = errorData.detail || detail;
+    } catch {
+      // ignore JSON parsing errors
+    }
+    const error = new Error("Receiving failed");
+    error.detail = detail;
+    throw error;
+  }
+  return await response.json();
+}
+
 // Container APIs
 // lib/api.js
 
@@ -202,6 +223,24 @@ export async function pickOrder(orderId, destinationName) {
     }
     if (response.status === 404 && detail === "Destination not found") {
       detail = "The destination you typed doesn’t exist in points—add or map it first in Settings.";
+    }
+    throw new Error(detail);
+  }
+  return await response.json();
+}
+
+export async function cancelOrder(orderId) {
+  const response = await fetch(`${API_BASE}/orders/${orderId}/cancel`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!response.ok) {
+    let detail = "Failed to cancel order";
+    try {
+      const errorData = await response.json();
+      detail = errorData.detail || detail;
+    } catch {
+      // ignore JSON parsing errors
     }
     throw new Error(detail);
   }

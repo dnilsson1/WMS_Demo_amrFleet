@@ -16,6 +16,7 @@
     containerModelCode: "",
     enterOrientation: "",
     isNew: false,
+    max_capacity: "",
     contents: [],
   };
 
@@ -90,6 +91,7 @@
         containerType: newContainer.containerType,
         position,
         emptyStatus: newContainer.emptyStatus,
+        max_capacity: newContainer.max_capacity ? Number(newContainer.max_capacity) : null,
         contents: Object.fromEntries(newContainer.contents.map((item) => [item.product_id, item.quantity])),
       };
 
@@ -105,6 +107,7 @@
         containerModelCode: "",
         enterOrientation: "",
         isNew: false,
+        max_capacity: "",
         contents: [],
       };
 
@@ -148,6 +151,7 @@
         containerModelCode: "",
         enterOrientation: "",
         isNew: false,
+        max_capacity: "",
         contents: [],
       };
 
@@ -184,6 +188,16 @@
       <div>
         <label for="container-position" class="block">Position:</label>
         <input id="container-position" type="text" bind:value={newContainer.position} class="w-full border p-2 rounded" />
+      </div>
+      <div>
+        <label for="container-capacity" class="block">Max Capacity (optional):</label>
+        <input
+          id="container-capacity"
+          type="number"
+          min="1"
+          bind:value={newContainer.max_capacity}
+          class="w-full border p-2 rounded"
+        />
       </div>
       <div>
         <label for="container-model-code" class="block">Container Model Code:</label>

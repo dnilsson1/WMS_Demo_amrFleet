@@ -117,6 +117,8 @@
               <p><strong>Unit:</strong> {product.unit}</p>
               <p><strong>Minimum Stock:</strong> {product.minimum_stock}</p>
               <p><strong>Current Stock:</strong> {product.current_stock}</p>
+              <p><strong>Allocated Stock:</strong> {product.allocated_stock}</p>
+              <p><strong>Available Stock:</strong> {product.current_stock - product.allocated_stock}</p>
 
               <!-- Adjust Stock Section -->
               <div class="mt-4">

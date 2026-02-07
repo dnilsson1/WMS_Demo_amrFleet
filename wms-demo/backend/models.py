@@ -37,6 +37,7 @@ class Product(SQLModel, table=True):
     unit: Optional[str] = "pcs"
     minimum_stock: int = 0
     current_stock: int = 0
+    allocated_stock: int = 0
 
     # Relationship to OrderItem
     order_items: List["OrderItem"] = Relationship(back_populates="product")
@@ -58,6 +59,7 @@ class Container(SQLModel, table=True):
     containerModelCode: Optional[str] = None
     enterOrientation: Optional[str] = None  # Add this field
     isNew: Optional[bool] = False
+    max_capacity: Optional[int] = None
     contents: Optional[dict] = Field(default_factory=dict, sa_column=Column(JSON))  # Assuming contents is a dictionary
 
 
@@ -89,6 +91,13 @@ class Point(SQLModel, table=True):
     name: str = Field(primary_key=True)  # Original name from fleet manager
     position: str  # Same as name
     wms_name: Optional[str] = None  # Renamed point name in WMS system
+
+
+class User(SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    username: str = Field(index=True, unique=True)
+    password_hash: str
+    role: str = "operator"
 
 
 
